@@ -1,6 +1,6 @@
 # AWS Serverless Performance Optimization with Lambda Power Tuning
 
-This portfolio lab applies the AWS Well-Architected **Cost Optimization** pillar to an API Gateway → Lambda → DynamoDB workload. It uses measured evidence—not a guessed memory size—to choose between a cost-optimized and a performance-optimized Lambda configuration.
+This hands-on portfolio project applies the AWS Well-Architected **Cost Optimization** pillar to an API Gateway → Lambda → DynamoDB workload. It uses measured evidence—not a guessed memory size—to choose between a cost-optimized and a performance-optimized Lambda configuration.
 
 **Result:** Lambda Power Tuning selected **512 MB** as the lowest estimated Lambda invocation-cost configuration. The same configuration completed the API load test with a **119 ms** average response time and no errors. **1024 MB** was the fastest option, with a **67 ms** end-to-end average response time, but it was not the lowest-cost configuration.
 
@@ -17,7 +17,7 @@ flowchart LR
     SF[AWS Step Functions\nLambda Power Tuning] -. invokes at each memory value .-> L
 ```
 
-The Lambda application code was kept unchanged from the course lab. It supports `create`, `read`, `update`, `delete`, `list`, `echo`, and `ping` operations against DynamoDB. My enhancement is the automated foundation and the evidence-driven cost/performance analysis.
+The Lambda application code supports `create`, `read`, `update`, `delete`, `list`, `echo`, and `ping` operations against DynamoDB. My enhancement is the automated foundation and the evidence-driven cost/performance analysis.
 
 ## What I automated with CloudFormation
 
@@ -27,7 +27,7 @@ The Lambda application code was kept unchanged from the course lab. It supports 
 | --- | --- |
 | DynamoDB | Table `lambda-apigateway`, string partition key `id`, on-demand (`PAY_PER_REQUEST`) billing, and project/environment/management tags |
 | IAM role | Named `lambda-apigateway-role` with the Lambda service trust policy |
-| DynamoDB permissions | Inline, table-scoped permission for only the CRUD/list actions the lab code supports |
+| DynamoDB permissions | Inline, table-scoped permission for only the CRUD/list actions the function supports |
 | CloudWatch Logs | Pre-created `/aws/lambda/LambdaFunctionOverHttps` log group with 14-day retention |
 | Logging permissions | Inline permission for only `CreateLogStream` and `PutLogEvents` on the function log group |
 
@@ -55,17 +55,37 @@ The named `lambda-apigateway-role` contains only the two inline policies created
 
 ![Least-privilege DynamoDB and logging inline policies](evidence/readme-references/1-CF-infrastructure-foundation-stack-provision-resource-IAM-Role-inline-policy-6.png)
 
-### 2. Deploy the Lambda and API Gateway integration
+### 2. Create and deploy the Lambda function
 
-Create `LambdaFunctionOverHttps` with the execution role above. API Gateway exposes a `POST` method on `/DynamoDBManager` and invokes the Lambda. The API invoke URL is redacted in the evidence.
+Create `LambdaFunctionOverHttps` with the CloudFormation-provisioned execution role, then deploy the function code used for this hands-on test.
 
-![Lambda function code deployed](evidence/readme-references/5-Deploy-lambda-function-4.png)
+![Lambda function code](evidence/readme-references/2-Deploy-lambda-function-1.png)
 
-![API Gateway POST method integrated with Lambda](evidence/readme-references/6-Deploy-API-Gateway-Method-lambda-integration-2.png)
+![Lambda function created](evidence/readme-references/2-Deploy-lambda-function-2.png)
 
-### 3. Verify the functional path before testing
+![Lambda function overview](evidence/readme-references/2-Deploy-lambda-function-3.png)
 
-I first validated the Lambda with an `echo` event, then used Postman to create and list DynamoDB records through API Gateway. This confirms the deployed request path before collecting performance data.
+![Lambda function code deployed](evidence/readme-references/2-Deploy-lambda-function-4.png)
+
+### 3. Create and deploy API Gateway
+
+Create the API Gateway resource `/DynamoDBManager`, configure its `POST` method to invoke the Lambda function, then deploy the API to the `Prod` stage. The API invoke URL is redacted in the evidence.
+
+![API Gateway POST method](evidence/readme-references/3-Deploy-API-Gateway-1.png)
+
+![API Gateway Lambda integration](evidence/readme-references/3-Deploy-API-Gateway-Method-lambda-integration-2.png)
+
+![API Gateway deployed to the Prod stage](evidence/readme-references/3-Deploy-API-Gateway-Copy-Invoke-URL-3.png)
+
+### 4. Test the API and invoke it via Postman to create and retrieve two DynamoDB items
+
+First, an `echo` event validates that the Lambda function executes successfully.
+
+![Lambda echo test input](evidence/readme-references/7-Test-Lambda-Function-echo-test-input-1.png)
+
+![Lambda echo test output](evidence/readme-references/7-Test-Lambda-Function-echotest-output-2.png)
+
+Next, Postman invokes the API to create two DynamoDB records and retrieve them through the Lambda `list` operation. This confirms the deployed API Gateway → Lambda → DynamoDB path before collecting performance data.
 
 ```json
 {
@@ -86,11 +106,27 @@ I first validated the Lambda with an `echo` event, then used Postman to create a
 
 ![Postman creates an item through the API](evidence/readme-references/8-Invoke-API-url-To-Create-Item-on-DynamoDB-via-POSTMAN-1.png)
 
-![DynamoDB contains the test record](evidence/readme-references/8-Explore-Items-From-DynamoDB-2.png)
+The `list` operation retrieves the items through API Gateway and confirms the Lambda can read the records it created.
+
+![Postman retrieves items from DynamoDB through the API](evidence/readme-references/8-Invoke-API-url-To-Retrieve-Items-from-DynamoDB-via-POSTMAN-3.png)
+
+The DynamoDB console provides an independent view of the items persisted in the table.
+
+![DynamoDB table items after functional validation](evidence/readme-references/8-Explore-Items-From-DynamoDB-2.png)
 
 ## Baseline: AWS Lambda Power Tuning
 
 AWS Lambda Power Tuning is a Step Functions-based tool that invokes the same Lambda at multiple memory settings and compares its average duration and estimated Lambda invocation cost. This baseline is a **direct Lambda measurement**; it does not include API Gateway latency.
+
+The following setup deploys the `aws-lambda-power-tuning` application from the Serverless Application Repository and verifies the generated Step Functions state machine.
+
+![AWS Lambda Power Tuning application in the Serverless Application Repository](evidence/readme-references/9-Setup-aws-lambda-power-tuning-application-1.png)
+
+![Deploy the AWS Lambda Power Tuning application](evidence/readme-references/9-Deploy-aws-lambda-power-tuning-application-2.png)
+
+![Power Tuning CloudFormation stack resources](evidence/readme-references/9-CF-stack-aws-lambda-power-tuning-application-output-resources-StepFunction-3.png)
+
+![Power Tuning Step Functions state machine](evidence/readme-references/9-CF-stack-aws-lambda-powertuning-output-step-function-power-tuning-state-machine-4.png)
 
 The state machine ran 10 invocations at each memory setting, with parallel invocation enabled and the `cost` strategy selected:
 
@@ -113,14 +149,16 @@ The state machine ran 10 invocations at each memory setting, with parallel invoc
 
 ![Power Tuning baseline results](evidence/readme-references/10-Lambda-power-tuning-baseline-results.png)
 
-### Baseline validation and interpretation
+### 📊 Results & insights
 
-| Finding | Evidence | Interpretation |
-| --- | --- | --- |
-| **Best cost: 512 MB** | State-machine output: `power: 512`, `cost: 4.964e-7`, `duration: 72.135 ms` | 512 MB is the minimum estimated Lambda compute-cost choice for this `list` payload. |
-| **Best time: 1024 MB** | Power Tuning visualization | 1024 MB has the lowest direct Lambda duration, roughly 35 ms in the graph. |
-| **Worst cost and time: 128 MB** | Power Tuning visualization | The smallest allocation took about 1.45 seconds and was also the most expensive per direct invocation for this workload. |
-| **Practical knee of the curve: 512 MB** | Time falls sharply from 128 → 256 → 512 MB, while cost reaches its minimum at 512 MB | More memory also provides more CPU. For this workload, the faster execution offsets the higher GB-second rate. |
+| Memory (MB) | Invocation time | Cost impact | Notes |
+| ---: | --- | --- | --- |
+| 128 | High (~1,445 ms) | Highest | Worst cost and performance result for this workload |
+| 256 | Moderate (~145 ms) | Low | Major time and cost reduction, but not the cost or time winner |
+| 512 | Low (~72 ms) | **Lowest** | **Optimal cost balance**; selected by the `cost` strategy (`4.964e-7` USD per invocation) |
+| 1024 | Very low (~35 ms) | Slightly higher than 512 MB | **Best performance**; selected as the fastest configuration |
+
+👉 Select memory based on the workload objective: **512 MB** for the lowest estimated Lambda compute cost, or **1024 MB** for the lowest latency. Lambda receives more CPU as configured memory increases, so the measured duration and cost curve—not memory size alone—should guide the decision.
 
 This is a valid cost-optimization baseline for **Lambda compute**. It does not prove that 512 MB minimizes the whole API request cost, which would also include API Gateway, DynamoDB, CloudWatch Logs, and data transfer.
 
@@ -144,14 +182,6 @@ The separate Postman performance test measures the deployed request path: API Ga
 
 At 128 MB, the test had no errors but the highest average response time (231 ms) and lowest observed throughput (30.77 req/s). The long response-time spikes make it a poor choice for this workload.
 
-### 1024 MB performance result
-
-![Lambda configured at 1024 MB](evidence/postman/4-Lambda-Memory-Setup-Load-Test-2-1024mb.png)
-
-![1024 MB Postman results](evidence/postman/5-Postman-Invoke-API-Gateway-url-Load-Test-1-Output-1024mb.png)
-
-At 1024 MB, average response time fell to 67 ms—3.45× faster than 128 MB—and observed throughput rose to 100.09 req/s. This agrees with Power Tuning's **Best Time** result.
-
 ### 512 MB cost-optimized result
 
 ![Lambda configured at 512 MB](evidence/postman/6-Lambda-Memory-Setup-Load-Test-3-512mb.png)
@@ -159,6 +189,14 @@ At 1024 MB, average response time fell to 67 ms—3.45× faster than 128 MB—an
 ![512 MB Postman results](evidence/postman/7-Postman-Invoke-API-Gateway-url-Load-Test-3-Output-512mb.png)
 
 At 512 MB, average response time was 119 ms—48.5% lower than 128 MB—with 58.32 req/s and no errors. This supports 512 MB as a strong cost-optimized production candidate when 119 ms meets the application latency objective.
+
+### 1024 MB performance result
+
+![Lambda configured at 1024 MB](evidence/postman/4-Lambda-Memory-Setup-Load-Test-2-1024mb.png)
+
+![1024 MB Postman results](evidence/postman/5-Postman-Invoke-API-Gateway-url-Load-Test-1-Output-1024mb.png)
+
+At 1024 MB, average response time fell to 67 ms—3.45× faster than 128 MB—and observed throughput rose to 100.09 req/s. This agrees with Power Tuning's **Best Time** result.
 
 ### Load-test validation
 
@@ -176,12 +214,12 @@ The throughput figures are from a fixed-virtual-user, closed-loop test. Faster r
 | Minimize estimated Lambda compute cost while maintaining responsive API behavior | **512 MB** | Power Tuning's lowest-cost result; 119 ms average API response; zero errors |
 | Minimize response time | **1024 MB** | Power Tuning's fastest direct-Lambda result; 67 ms average API response; zero errors |
 
-For this lab, I would deploy **512 MB** as the default if its 119 ms average satisfies the service-level objective. I would choose **1024 MB** when the 52 ms additional latency reduction is worth the small increase in estimated Lambda invocation cost. The final production choice should include a full cost model and repeated load tests.
+For this hands-on project, I would deploy **512 MB** as the default if its 119 ms average satisfies the service-level objective. I would choose **1024 MB** when the 52 ms additional latency reduction is worth the small increase in estimated Lambda invocation cost. The final production choice should include a full cost model and repeated load tests.
 
 ## Cost-optimization practices demonstrated
 
 - Automated, repeatable infrastructure with CloudFormation.
-- On-demand DynamoDB for an intermittent lab workload.
+- On-demand DynamoDB for an intermittent workload.
 - Least-privilege IAM scoped to one table and one log group.
 - 14-day CloudWatch log retention to control logging storage costs.
 - Resource tags for cost allocation and ownership.
