@@ -1,0 +1,148 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Foundation resources for the serverless cost-optimization lab: an on-demand
+  DynamoDB table, least-privilege Lambda execution role, and Lambda log group.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aws-serverless-cost-optimization
+    Description: Value applied to the Project tag on all supported resources.
+
+  EnvironmentName:
+    Type: String
+    Default: lab
+    AllowedValues:
+      - lab
+      - dev
+      - test
+    Description: Value applied to the Environment tag.
+
+  TableName:
+    Type: String
+    Default: lambda-apigateway
+    AllowedPattern: '^[a-zA-Z0-9_.-]+$'
+    ConstraintDescription: Use only letters, numbers, periods, underscores, and hyphens.
+    Description: DynamoDB table name expected by the unchanged lab Lambda code.
+
+  FunctionName:
+    Type: String
+    Default: LambdaFunctionOverHttps
+    AllowedPattern: '^[a-zA-Z0-9_-]+$'
+    ConstraintDescription: Use only letters, numbers, underscores, and hyphens.
+    Description: Name of the Lambda function that will use this execution role.
+
+  LambdaRoleName:
+    Type: String
+    Default: lambda-apigateway-role
+    AllowedPattern: '^[a-zA-Z0-9+=,.@_-]+$'
+    ConstraintDescription: Use only letters, numbers, and +=,.@_- characters.
+    Description: Name for the Lambda execution IAM role.
+
+Resources:
+  DynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      TableName: !Ref TableName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${FunctionName}'
+      RetentionInDays: 14
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref LambdaRoleName
+      Description: Least-privilege execution role for the serverless cost-optimization lab Lambda.
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowLambdaServiceToAssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: WriteToFunctionLogGroup
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: WriteToThisFunctionsLogStreams
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt LambdaLogGroup.Arn
+        - PolicyName: AccessOnlyLabDynamoDBTable
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: PerformSupportedOperationsOnLabTable
+                Effect: Allow
+                Action:
+                  - dynamodb:DeleteItem
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt DynamoDBTable.Arn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+Outputs:
+  DynamoDBTableName:
+    Description: Provide this value as tableName in the lab test payloads.
+    Value: !Ref DynamoDBTable
+
+  DynamoDBTableArn:
+    Description: ARN of the DynamoDB table permitted to the Lambda execution role.
+    Value: !GetAtt DynamoDBTable.Arn
+
+  LambdaExecutionRoleName:
+    Description: Select this role when creating LambdaFunctionOverHttps in the Lambda console.
+    Value: !Ref LambdaExecutionRole
+
+  LambdaExecutionRoleArn:
+    Description: ARN of the least-privilege Lambda execution role.
+    Value: !GetAtt LambdaExecutionRole.Arn
+
+  LambdaLogGroupName:
+    Description: Pre-created CloudWatch Logs group for the Lambda function.
+    Value: !Ref LambdaLogGroup
+
+  LambdaLogGroupArn:
+    Description: ARN of the CloudWatch Logs group to which the role can write.
+    Value: !GetAtt LambdaLogGroup.Arn
